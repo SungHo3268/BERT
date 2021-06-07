@@ -1,8 +1,7 @@
-import numpy as np
 import torch
 import pickle
 from tqdm.auto import tqdm
-import sentencepiece as spm
+import numpy as np
 import sys
 import os
 sys.path.append(os.getcwd())
@@ -10,10 +9,16 @@ sys.path.append(os.getcwd())
 
 def load_pairs():
     log_dir = 'datasets/preprocessed/huggingface/concatenated/'
+
+    print("Loading pre-train Datasets...", end=' ')
+    print("IsNext pairs...", end=' ')
     with open(os.path.join(log_dir, 'IsNext_pairs.pkl'), 'rb') as fr:
         IsNext_pairs = pickle.load(fr)
+    print("NotNext pairs...", end=' ')
     with open(os.path.join(log_dir, 'NotNext_pairs.pkl'), 'rb') as fr:
         NotNext_pairs = pickle.load(fr)
+    print('Complete..!')
+
     return IsNext_pairs, NotNext_pairs
 
 
@@ -41,3 +46,19 @@ def get_seg_embedding(tensor, sep_id, gpu, cuda):
             sep = int(torch.where(sentence == sep_id)[0])
             seg_embedding[i][sep+1:] += 1
     return seg_embedding
+
+
+def convert_to_ids(pairs, cls_id, sep_id, max_seq_len, tokenizer):
+    corpus = []
+    for pair in tqdm(pairs, total=len(pairs), desc="Convert string to ids...", bar_format='{l_bar}{r_bar}'):
+        temp = [cls_id]
+        temp.extend(tokenizer.encode(pair[0]))
+        temp.append(sep_id)
+        temp.extend(tokenizer.encode(pair[1]))
+        if len(temp) < 128:
+            pad_len = 128-len(temp)
+            temp += [tokenizer.pad_id]*pad_len
+        else:
+            temp = temp[:max_seq_len]
+        corpus.append(temp)
+    return np.array(corpus)

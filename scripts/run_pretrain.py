@@ -1,16 +1,9 @@
 import argparse
 from distutils.util import strtobool as _bool
 import json
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 import sentencepiece as spm
-import numpy as np
-import random
-from tqdm.auto import tqdm
-import pickle
 import gc
 import sys
 import os
@@ -25,7 +18,7 @@ parser.add_argument('--port', type=str, default='56789')
 # parser.add_argument('--max_epoch', type=int, default=)
 # parser.add_argument('--stack_num', type=int, default=)
 # parser.add_argument('--batch_size', type=int, default=)
-parser.add_argument('--max_seq_len', type=int, default=256)
+parser.add_argument('--max_seq_len', type=int, default=128)
 parser.add_argument('--layer_num', type=int, default=2)
 parser.add_argument('--att_head_num', type=int, default=12)
 parser.add_argument('--d_model', type=int, default=128)
@@ -93,18 +86,6 @@ tb_writer = SummaryWriter(tb_dir)
 
 
 ############################## Input data ##############################
-print("Loading pre-train Datasets...", end=' ')
-print("pairs...", end=' ')
-with open('datasets/preprocessed/huggingface/concatenated/concatenated.pair.pkl', 'rb') as fr:
-    pairs = pickle.load(fr)
-print("soles...", end=' ')
-with open('datasets/preprocessed/huggingface/concatenated/concatenated.sole.pkl', 'rb') as fr:
-    soles = pickle.load(fr)
-print("pool...", end=' ')
-with open('datasets/preprocessed/huggingface/concatenated/concatenated.pool.pkl', 'rb') as fr:
-    pool = pickle.load(fr)
-print('Complete..!')
-
 IsNext_pairs, NotNext_pairs = load_pairs()
 model_file = 'tokenizer/pretrain_all_30k.model'
 tokenizer = spm.SentencePieceProcessor(model_file=model_file)

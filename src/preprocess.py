@@ -1,5 +1,4 @@
-from datasets import load_dataset, concatenate_datasets, load_from_disk
-import numpy as np
+from datasets import load_from_disk
 import pickle
 from tqdm.auto import tqdm
 import random
@@ -91,40 +90,49 @@ def make_pair():
 
 def make_next_pairs():
     # Load preprocessed dataset
+    print("Loading the pair dataset...", end=' ')
+    print("pairs...", end=' ')
     with open('datasets/preprocessed/huggingface/concatenated/concatenated.pair.pkl', 'rb') as fr:
         pairs = pickle.load(fr)
+    print("soles...", end=' ')
     with open('datasets/preprocessed/huggingface/concatenated/concatenated.sole.pkl', 'rb') as fr:
         soles = pickle.load(fr)
+    print("pool...", end=' ')
     with open('datasets/preprocessed/huggingface/concatenated/concatenated.pool.pkl', 'rb') as fr:
         pool = pickle.load(fr)
+    print("Complete..!")
 
-    print("Shuffling the pairs...")
+    print("Shuffling the pairs...", end=' ')
     random.shuffle(pairs)  # multi-dimensional arrays are only shuffled along the first axis:
-    print("Shuffling the soles...")
+    print("soles...", end=' ')
     random.shuffle(soles)
-    print("Shuffling the pool...")
+    print("pool...", end=' ')
     random.shuffle(pool)
+    print('Complete..!')
 
     # IsNext
     half = int(len(pool) / 2)
-    for pair in tqdm(pairs[half:], total=half, desc='Making IsNext pairs...', bar_format='{l_bar}{r_bar}'):
-        for sentence in pair:
-            soles.append(sentence[0])
-    IsNext_pairs = pairs[:half]  # IsNext pairs
+    print('Making IsNext pairs...')
+    IsNext_pairs = pairs[:half]
+    for pair in tqdm(pairs[half:], total=len(pairs[half:]), desc='', bar_format='{l_bar}{r_bar}'):
+        soles.append(pair[0])
 
     # NotNext
     NotNext_pairs = []  # NotNext pairs
-    random.shuffle(pool)
     for i, sole in tqdm(enumerate(soles), total=len(soles),
                         desc='Making NotNext pairs...', bar_format='{l_bar}{r_bar}'):
         pair = [sole, pool[i]]
         NotNext_pairs.append(pair)
 
     # save the files
+    print("Saving the pairs...", end=' ')
+    print("IsNext_pairs...", end=' ')
     with open('datasets/preprocessed/huggingface/concatenated/IsNext_pairs.pkl', 'wb') as fw:
         pickle.dump(IsNext_pairs, fw)
+    print("NotNext_pairs...", end=' ')
     with open('datasets/preprocessed/huggingface/concatenated/NotNext_pairs.pkl', 'wb') as fw:
         pickle.dump(NotNext_pairs, fw)
+    print("Complete..!")
 
 
 if __name__ == '__main__':

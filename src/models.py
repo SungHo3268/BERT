@@ -1,12 +1,11 @@
-import torch.nn as nn
 import sys
 import os
 sys.path.append(os.getcwd())
-from src.layers import *
+from src.layer import *
 from src.functions import *
 
 
-class BERT(nn.Moule):
+class BERT(nn.Module):
     def __init__(self, V, d_model, embed_weight, max_seq_len, dropout, hidden_layer_num, d_ff, head_num, gpu, cuda):
         """
         :param V: Vocabulary size
@@ -29,10 +28,15 @@ class BERT(nn.Moule):
             self.sub_layers.append(SubLayers(d_model, d_ff, head_num, dropout, gpu, cuda))
         self.output_layer = nn.Linear(d_model, V)
 
-    def forward(self, src_input):
-        pad_mask = get_pad_mask(x, gpu, cuda)
-        seg_embed = get_seg_embedding(x)
-        src = self.input_layer(src_input)
+    def forward(self, src_input, sep_id):
+        """
+        :param src_input: (batch_size, max_seq_len)
+        :param sep_id: the vocabulary id of '[SEP]' token
+        :return:
+        """
+        pad_mask = get_pad_mask(src_input, self.gpu, self.cuda)
+        seg_embedding = get_seg_embedding(src_input, sep_id, self.gpu, self.cuda)
+        src = self.input_layer(src_input, seg_embedding)
         hs = self.encoder(src, pad_mask)            # hs = (batch_size, max_seq_len, d_model)
         out = self.output_layer(hs)                 # out = (batch_size, max_seq_len, V)
         return out
