@@ -1,6 +1,5 @@
 import torch
 import pickle
-from tqdm.auto import tqdm
 import numpy as np
 import sys
 import os
@@ -48,17 +47,31 @@ def get_seg_embedding(tensor, sep_id, gpu, cuda):
     return seg_embedding
 
 
-def convert_to_ids(pairs, cls_id, sep_id, max_seq_len, tokenizer):
-    corpus = []
-    for pair in tqdm(pairs, total=len(pairs), desc="Convert string to ids...", bar_format='{l_bar}{r_bar}'):
-        temp = [cls_id]
-        temp.extend(tokenizer.encode(pair[0]))
-        temp.append(sep_id)
-        temp.extend(tokenizer.encode(pair[1]))
-        if len(temp) < 128:
-            pad_len = 128-len(temp)
-            temp += [tokenizer.pad_id]*pad_len
-        else:
-            temp = temp[:max_seq_len]
-        corpus.append(temp)
-    return np.array(corpus)
+def count_tokens(corpus):
+    mask = np.zeros_like(corpus)
+    eq = np.not_equal(corpus, mask)
+    token_nums = np.sum(eq)
+    return token_nums
+
+
+def replace_mask(inputs, vocab_size=30000, cls_id=2, sep_id=3, mask_id=4):
+    mask_loc = []
+    mask_label = []
+    for i, sequence in enumerate(inputs):
+        for j, token in enumerate(sequence):
+            if (token != 0) and (token != cls_id) and (token != sep_id):
+                prob = np.random.random()
+                if prob >= 0.15:
+                    continue
+                elif prob >= 0.135:  # random   1.5%
+                    mask_loc.append([i, j])
+                    mask_label.append(token)
+                    inputs[i, j] = np.random.randint(low=5, high=vocab_size, size=1, dtype=int)
+                elif prob >= 0.12:   # same     1.5%
+                    mask_loc.append([i, j])
+                    mask_label.append(token)
+                else:               # MASK      12%
+                    mask_loc.append([i, j])
+                    mask_label.append(token)
+                    inputs[i, j] = mask_id
+    return None

@@ -3,12 +3,12 @@ from distutils.util import strtobool as _bool
 import json
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
-import sentencepiece as spm
+import numpy as np
 import gc
 import sys
 import os
 sys.path.append(os.getcwd())
-from src.functions import *
+from src.preprocess import *
 
 
 ############################## Argparse ##############################
@@ -86,9 +86,11 @@ tb_writer = SummaryWriter(tb_dir)
 
 
 ############################## Input data ##############################
-IsNext_pairs, NotNext_pairs = load_pairs()
+# Load the tokenizer made by sentencepiece
 model_file = 'tokenizer/pretrain_all_30k.model'
 tokenizer = spm.SentencePieceProcessor(model_file=model_file)
 
 
 ############################## Pretrain ##############################
+with open('datasets/preprocessed/huggingface/corpus/IsNext_0', 'rb') as fr:
+    corpus = pickle.load(fr)
