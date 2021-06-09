@@ -63,9 +63,11 @@ def replace_mask(inputs, vocab_size=30000, cls_id=2, sep_id=3, mask_id=4):
                   tensor([ids]),
                     ...,
                   tensor([ids])]
+
+             tensor([ids]) = (128, )
     """
-    mask_loc = []
-    mask_label = []
+    mask_loc = torch.zeros_like(inputs)
+    mask_label = torch.zeros_like(inputs)
     for i, sequence in enumerate(inputs):       # sequence = tensor([id1, id2, ... ])
         for j, token in enumerate(sequence):
             if token == 0:
@@ -75,16 +77,16 @@ def replace_mask(inputs, vocab_size=30000, cls_id=2, sep_id=3, mask_id=4):
                 if prob >= 0.15:
                     continue
                 elif prob >= 0.135:  # random   1.5%
-                    mask_loc.append((i, j))
-                    mask_label.append(int(token))
+                    mask_loc[i][j] = 1
+                    mask_label[i][j] = int(token)
                     inputs[i][j] = torch.as_tensor(np.random.randint(low=5, high=vocab_size, size=1, dtype=int),
                                                    dtype=torch.int32)
                 elif prob >= 0.12:   # same     1.5%
-                    mask_loc.append((i, j))
-                    mask_label.append(int(token))
+                    mask_loc[i][j] = 1
+                    mask_label[i][j] = int(token)
                 else:               # MASK      12%
-                    mask_loc.append((i, j))
-                    mask_label.append(int(token))
+                    mask_loc[i][j] = 1
+                    mask_label[i][j] = int(token)
                     inputs[i][j] = torch.as_tensor(mask_id, dtype=torch.int32)
     return mask_loc, mask_label
 
@@ -110,6 +112,7 @@ def collate_fn(data):
         inputs += [0] * (max_seq_len - len(inputs))
         corpus.append(torch.tensor(inputs, dtype=torch.int32))
         c_labels.append(torch.tensor(label, dtype=torch.int32))
+    corpus = torch.stack(corpus, dim=0)
     mask_loc, mask_label = replace_mask(corpus)
     return corpus, c_labels, mask_loc, mask_label
 
