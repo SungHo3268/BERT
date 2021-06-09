@@ -144,13 +144,10 @@ def convert_to_ids(pairs, max_seq_len, tokenizer, cls_id=2, sep_id=3):
         temp.append(sep_id)
         temp += (tokenizer.encode_as_ids(pair[1]))
         temp.append(sep_id)
-        if len(temp) < 128:
-            pad_len = 128-len(temp)
-            temp += [0]*pad_len
-        else:
-            temp = temp[:max_seq_len]
+
+        temp = temp[:max_seq_len]
         corpus.append(temp)
-    return np.array(corpus)
+    return corpus
 
 
 def make_seg_corpus(seg_num, max_seq_len):
@@ -167,7 +164,7 @@ def make_seg_corpus(seg_num, max_seq_len):
         print(f"IsNext seg_{i}")
         pairs = IsNext_pairs[i * seg_size: (i + 1) * seg_size]
         corpus_seg = convert_to_ids(pairs, max_seq_len, tokenizer)
-        with open(f'datasets/preprocessed/huggingface/corpus/IsNext/IsNext_{i}', 'wb') as fw:
+        with open(f'datasets/preprocessed/huggingface/corpus/IsNext/IsNext_{i}.pkl', 'wb') as fw:
             pickle.dump(corpus_seg, fw)
 
     # make NotNext corpus
@@ -176,7 +173,7 @@ def make_seg_corpus(seg_num, max_seq_len):
         print(f"NotNext seg_{i}")
         pairs = NotNext_pairs[i * seg_size: (i + 1) * seg_size]
         corpus_seg = convert_to_ids(pairs, max_seq_len, tokenizer)
-        with open(f'datasets/preprocessed/huggingface/corpus/NotNext/NotNext_{i}', 'wb') as fw:
+        with open(f'datasets/preprocessed/huggingface/corpus/NotNext/NotNext_{i}.pkl', 'wb') as fw:
             pickle.dump(corpus_seg, fw)
 
 
@@ -184,28 +181,27 @@ def all_tokens(seg_num):
     IsNext_tokens = 0
     NotNext_tokens = 0
 
-    print("The number of tokens of IsNext pairs is ...", end=' ')
-    for i in range(seg_num):
-        with open(f'datasets/preprocessed/huggingface/corpus/IsNext/IsNext_{i}', 'rb') as fr:
+    print("Counting the number of tokens of IsNext pairs...")
+    for i in tqdm(range(seg_num)):
+        with open(f'datasets/preprocessed/huggingface/corpus/IsNextre/IsNext_{i}.pkl', 'rb') as fr:
             corpus = pickle.load(fr)
         IsNext_tokens += count_tokens(corpus)
     print(IsNext_tokens, '..!!')
 
-    print("The number of tokens of NotNext pairs is ...", end=' ')
-    for i in range(seg_num):
-        with open(f'datasets/preprocessed/huggingface/corpus/NotNext/NotNext_{i}', 'rb') as fr:
+    print("Counting the number of tokens of NotNext pairs...")
+    for i in tqdm(range(seg_num)):
+        with open(f'datasets/preprocessed/huggingface/corpus/NotNextre/NotNext_{i}.pkl', 'rb') as fr:
             corpus = pickle.load(fr)
         NotNext_tokens += count_tokens(corpus)
     print(NotNext_tokens, '..!!')
 
     whole_tokens = IsNext_tokens + NotNext_tokens
     print("Whole number of tokens: ", whole_tokens)
-    return IsNext_tokens, NotNext_tokens, whole_tokens
 
 
 if __name__ == '__main__':
-    split_to_article()      # with saving file
-    make_pair()             # with saving file
-    make_next_pairs()
-    make_seg_corpus(seg_num=10, max_seq_len=128)
-    # IsNext_tokens, NotNext_tokens, whole_tokens = all_tokens(seg_num=10)
+    # split_to_article()      # with saving file
+    # make_pair()             # with saving file
+    # make_next_pairs()
+    # make_seg_corpus(seg_num=100, max_seq_len=128)
+    all_tokens(seg_num=100)

@@ -124,9 +124,9 @@ class MultiHeadAttention(nn.Module):
 class PositionwiseFFN(nn.Module):
     def __init__(self, d_model, d_ff, dropout):
         super(PositionwiseFFN, self).__init__()
-        self.linear1 = nn.Linear(d_model, d_ff)
+        self.linear1 = nn.Linear(d_model, d_ff, bias=True)
         self.gelu = nn.GELU()
-        self.linear2 = nn.Linear(d_ff, d_model)
+        self.linear2 = nn.Linear(d_ff, d_model, bias=True)
         self.dropout = nn.Dropout(p=dropout)
         self.layer_norm = nn.LayerNorm(d_model)
 
@@ -159,7 +159,7 @@ class SubLayers(nn.Module):
 
     def forward(self, x, pad_mask):
         """
-        :param x: (the output of the embedding layer) or (the output of the previous encoder sublayer)
+        :param x: (the output of the embedding layer) or (the output of the previous sublayer)
                x = (batch_size, max_seq_len, d_model)
         :param pad_mask: (batch_size, 1, 1, seq_len)
         :return: out = (batch_size, seq_len(max_seq_len), d_model)
