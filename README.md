@@ -14,7 +14,7 @@ This project is about the reimplementation of the paper, BERT: Pre-training of D
 # Tokenizer
 : To make tokenizer, I use the sentencepiece module of Google with the command like below.
 
-spm_train --input=tokenizer/concatenated.split.forSPM.txt 
+- spm_train --input=tokenizer/concatenated.split.forSPM.txt 
           --model_prefix=pretrain_all_30k
           --vocab_size=30000 
           --pad_id=0 
