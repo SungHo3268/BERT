@@ -59,6 +59,8 @@ def count_tokens(corpus):
 
 def replace_mask(inputs, vocab_size=30000, cls_id=2, sep_id=3, mask_id=4):
     """
+    # inputs are replaced
+
     inputs = list[tensor([ids]),
                   tensor([ids]),
                     ...,
@@ -67,7 +69,7 @@ def replace_mask(inputs, vocab_size=30000, cls_id=2, sep_id=3, mask_id=4):
              tensor([ids]) = (128, )
     """
     mask_loc = torch.zeros_like(inputs)
-    mask_label = torch.zeros_like(inputs)
+    mask_label = torch.zeros_like(inputs, dtype=torch.long)
     for i, sequence in enumerate(inputs):       # sequence = tensor([id1, id2, ... ])
         for j, token in enumerate(sequence):
             if token == 0:
@@ -78,16 +80,16 @@ def replace_mask(inputs, vocab_size=30000, cls_id=2, sep_id=3, mask_id=4):
                     continue
                 elif prob >= 0.135:  # random   1.5%
                     mask_loc[i][j] = 1
-                    mask_label[i][j] = int(token)
+                    mask_label[i][j] = token
                     inputs[i][j] = torch.as_tensor(np.random.randint(low=5, high=vocab_size, size=1, dtype=int),
-                                                   dtype=torch.int32)
+                                                   dtype=torch.long)
                 elif prob >= 0.12:   # same     1.5%
                     mask_loc[i][j] = 1
-                    mask_label[i][j] = int(token)
+                    mask_label[i][j] = token
                 else:               # MASK      12%
                     mask_loc[i][j] = 1
-                    mask_label[i][j] = int(token)
-                    inputs[i][j] = torch.as_tensor(mask_id, dtype=torch.int32)
+                    mask_label[i][j] = token
+                    inputs[i][j] = mask_id
     return mask_loc, mask_label
 
 
@@ -110,9 +112,10 @@ def collate_fn(data):
         label = scalar
         """
         inputs += [0] * (max_seq_len - len(inputs))
-        corpus.append(torch.tensor(inputs, dtype=torch.int32))
-        c_labels.append(torch.tensor(label, dtype=torch.int32))
+        corpus.append(torch.tensor(inputs, dtype=torch.long))
+        c_labels.append(torch.tensor(label, dtype=torch.long))
     corpus = torch.stack(corpus, dim=0)
+    c_labels = torch.stack(c_labels, dim=0)
     mask_loc, mask_label = replace_mask(corpus)
     return corpus, c_labels, mask_loc, mask_label
 

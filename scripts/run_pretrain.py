@@ -27,13 +27,14 @@ parser.add_argument('--att_head_num', type=int, default=2)
 parser.add_argument('--d_model', type=int, default=128)
 parser.add_argument('--dropout', type=float, default=0.1)
 parser.add_argument('--initializer_range', type=float, default=0.2)
-parser.add_argument('--eval_interval', type=int, default=100)
+parser.add_argument('--eval_interval', type=int, default=10)
 parser.add_argument('--initial_lr', type=float, default=1e-4)
 parser.add_argument('--pretraining', type=_bool, default=True)
 parser.add_argument('--max_steps', type=int, default=1000000)
+parser.add_argument('--seg_num', type=int, default=10, help='10 | 100')
 parser.add_argument('--random_seed', type=int, default=42)
 parser.add_argument('--gpu', type=_bool, default=True)
-parser.add_argument('--cuda', type=int, default=0)
+parser.add_argument('--cuda', type=int, default=1)
 parser.add_argument('--restart', type=_bool, default=False)
 parser.add_argument('--restart_epoch', type=int, default=0)
 args = parser.parse_args()
@@ -100,10 +101,10 @@ nn.init.trunc_normal_(embed_weight, std=args.initializer_range)
 model = BERT(V, args.d_model, embed_weight, args.max_seq_len, args.dropout, args.hidden_layer_num, d_ff,
              args.att_head_num, args.pretraining, args.gpu, args.cuda)
 model.init_param(args.initializer_range)
-criterion = nn.CrossEntropyLoss(ignore_index=0)
+mlm_criterion = nn.CrossEntropyLoss(ignore_index=0)
+nsp_criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(params=model.parameters(), lr=0, betas=(beta1, beta2), weight_decay=l2_weight_decay)
 scaler = amp.GradScaler()
-
 
 if args.restart:
     model.load_state_dict(torch.load(os.path.join(ckpt_dir, 'model.ckpt'),
@@ -119,8 +120,8 @@ device = None
 if args.gpu:
     device = torch.device(f'cuda:{args.cuda}' if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    criterion.to(device)
-
+    mlm_criterion.to(device)
+    nsp_criterion.to(device)
 
 ############################## Start Pretrain ##############################
 step_num = 0 if not args.restart else re_step_num
@@ -132,24 +133,30 @@ nsp_loss_sum = 0
 mlm_acc_list = []
 nsp_acc_list = []
 for epoch in range(start_e, args.max_epoch):
-    data_seg_num = 100
     # for shuffling
-    IsNext_order = np.arange(data_seg_num)
-    NotNext_order = np.arange(data_seg_num)
+    IsNext_order = np.arange(args.seg_num)
+    NotNext_order = np.arange(args.seg_num)
     np.random.shuffle(IsNext_order)
     np.random.shuffle(NotNext_order)
-    for i in range(data_seg_num):
+    for i in range(args.seg_num):
         print('\n')
-        print(f"epoch: {epoch+1}/{args.max_epoch}, data_seg: {i+1}/{data_seg_num}")
+        print(f"epoch: {epoch+1}/{args.max_epoch}, data_seg: {i+1}/{args.seg_num}")
 
         # Load input datasets
+        if args.seg_num == 100:
+            Is_dir = 'datasets/preprocessed/huggingface/corpus/IsNextre/'
+            Not_dir = 'datasets/preprocessed/huggingface/corpus/NotNextre/'
+        elif args.seg_num == 10:
+            Is_dir = 'datasets/preprocessed/huggingface/corpus/IsNext/'
+            Not_dir = 'datasets/preprocessed/huggingface/corpus/NotNext/'
+
         print("Loading the input dataset...", end=' ')
         print(f"IsNext...", end=' ')
-        with open(f'datasets/preprocessed/huggingface/corpus/IsNextre/IsNext_{i}.pkl', 'rb') as fr:
+        with open(os.path.join(Is_dir, f'IsNext_{i}.pkl'), 'rb') as fr:
             corpus1 = pickle.load(fr)
             c_label1 = [0] * len(corpus1)
         print(f"NotNext...", end=' ')
-        with open(f'datasets/preprocessed/huggingface/corpus/NotNextre/NotNext_{i}.pkl', 'rb') as fr:
+        with open(os.path.join(Not_dir, f'NotNext_{i}.pkl'), 'rb') as fr:
             corpus2 = pickle.load(fr)
             c_label2 = [1] * len(corpus2)
         print('Complete.')
@@ -163,14 +170,14 @@ for epoch in range(start_e, args.max_epoch):
             dataset.append(temp)
         print("Applying padding and Making batch...")
         data_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,
-                                 drop_last=True)
+                                 num_workers=4, drop_last=True)
         for inputs, cls_label, mask_loc, mask_label in tqdm(data_loader, desc='pre-training...',
                                                             total=len(data_loader), bar_format='{l_bar}{r_bar}'):
             if args.gpu:
-                inputs = inputs.to(torch.long).to(device)
+                inputs = inputs.to(device)
+                cls_label = cls_label.to(device)
                 mask_loc = mask_loc.to(device)
-                mask_label = mask_label.to(torch.long).to(device)
-                cls_label = torch.LongTensor(cls_label).to(device)
+                mask_label = mask_label.to(device)
 
             with amp.autocast():
                 # forward
@@ -186,8 +193,8 @@ for epoch in range(start_e, args.max_epoch):
                 nsp_acc = int(correct) / len(cls_label)
                 nsp_acc_list.append(nsp_acc)
             # loss
-            mlm_loss = criterion(mlm_out.view(-1, V), mask_label.view(-1))
-            nsp_loss = criterion(nsp_out, cls_label)
+            mlm_loss = mlm_criterion(mlm_out.view(-1, V), mask_label.view(-1))
+            nsp_loss = nsp_criterion(nsp_out, cls_label)
             mlm_loss /= args.stack_num
             nsp_loss /= args.stack_num
             loss = mlm_loss + nsp_loss
@@ -207,6 +214,7 @@ for epoch in range(start_e, args.max_epoch):
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
+
                 tb_writer.add_scalar('total_loss/step', total_loss, step_num)
                 tb_writer.add_scalar('mlm_loss/step', mlm_loss_sum, step_num)
                 tb_writer.add_scalar('nsp_loss/step', nsp_loss_sum, step_num)
