@@ -7,6 +7,8 @@ This project is about the reimplementation of the paper, BERT: Pre-training of D
 - BookCorpus
 : Use old ver BookCorpus dataset from huggingface (here: "https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-v1.zip")
 
+[dataset_info.txt](https://github.com/SungHo3268/BERT/files/6629607/dataset_info.txt)
+
 
 
 # Tokenizer
@@ -25,14 +27,19 @@ spm_train --input=tokenizer/concatenated.split.forSPM.txt
           --character_coverage=0.99995 
           --model_type=bpe
 
+
+
 # Preprocess
 : Since I just implemente the tiny and small model of BERT, I just set the batch size as 128 and 128 max_seq_len = tokens.
 : so I delt with 128x128 tokens as a step.
+
+
 
 # Functions
 - collate_fn
 : input = the list of sequences expressed in indices.
           (one sequence which is one sole sentence or the pair of two sentences per line)
+          
           
 
 # Remark for model
