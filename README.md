@@ -45,4 +45,5 @@ This project is about the reimplementation of the paper, BERT: Pre-training of D
 
 # Remark for model
 : Due to lack of memory and time, I just implemented the tiny and small model of BERT in this project.
+
 : If you wanna do get a base or large model, just change the arguments of 'run_pretrain.py' -- args.hidden_layer_num, args.att_head_num, args.d_model, args
