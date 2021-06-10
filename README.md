@@ -7,6 +7,7 @@ This project is about the reimplementation of the paper, BERT: Pre-training of D
 - BookCorpus
 : Use old ver BookCorpus dataset from huggingface (here: "https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-v1.zip")
 
+- INFORMATION
    [dataset_info.txt](https://github.com/SungHo3268/BERT/files/6629607/dataset_info.txt)
 
 
