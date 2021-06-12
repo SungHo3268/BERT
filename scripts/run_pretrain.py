@@ -32,7 +32,7 @@ parser.add_argument('--initial_lr', type=float, default=1e-4)
 parser.add_argument('--pretraining', type=_bool, default=True)
 parser.add_argument('--max_steps', type=int, default=1000000)
 parser.add_argument('--seg_num', type=int, default=100, help='10 | 100')
-parser.add_argument('--random_seed', type=int, default=42)
+parser.add_argument('--random_seed', type=int, default=515)
 parser.add_argument('--gpu', type=_bool, default=True)
 parser.add_argument('--cuda', type=int, default=1)
 parser.add_argument('--restart', type=_bool, default=False)
@@ -101,9 +101,8 @@ nn.init.trunc_normal_(embed_weight, std=args.initializer_range)
 model = BERT(V, args.d_model, embed_weight, args.max_seq_len, args.dropout, args.hidden_layer_num, d_ff,
              args.att_head_num, args.pretraining, args.gpu, args.cuda)
 model.init_param(args.initializer_range)
-mlm_criterion = nn.CrossEntropyLoss(ignore_index=0)
-nsp_criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(params=model.parameters(), lr=0, betas=(beta1, beta2), weight_decay=l2_weight_decay)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.AdamW(params=model.parameters(), lr=0, betas=(beta1, beta2), weight_decay=l2_weight_decay)
 scaler = amp.GradScaler()
 
 if args.restart:
@@ -120,8 +119,8 @@ device = None
 if args.gpu:
     device = torch.device(f'cuda:{args.cuda}' if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    mlm_criterion.to(device)
-    nsp_criterion.to(device)
+    criterion.to(device)
+
 
 ############################## Start Pretrain ##############################
 step_num = 0 if not args.restart else re_step_num
@@ -182,10 +181,10 @@ for epoch in range(start_e, args.max_epoch):
             with amp.autocast():
                 # forward
                 mlm_out, nsp_out = model(inputs, sep_id)        # mlm_out = (batch_size, max_seq_len, V)
-                mlm_out *= mask_loc.unsqueeze(-1)                               # nsp_out = (batch_size, 2)
+                # mlm_out *= mask_loc.unsqueeze(-1)                               # nsp_out = (batch_size, 2)
                 # acc
                 # MLM
-                correct = torch.sum(torch.argmax(mlm_out, dim=-1) == mask_label) - torch.sum(1 - mask_loc)
+                correct = torch.sum(torch.argmax(mlm_out, dim=-1) == mask_label)
                 mlm_acc = int(correct) / len(mask_label)
                 mlm_acc_list.append(mlm_acc)
                 # CLS
@@ -193,8 +192,8 @@ for epoch in range(start_e, args.max_epoch):
                 nsp_acc = int(correct) / len(cls_label)
                 nsp_acc_list.append(nsp_acc)
             # loss
-            mlm_loss = mlm_criterion(mlm_out.view(-1, V), mask_label.view(-1))
-            nsp_loss = nsp_criterion(nsp_out, cls_label)
+            mlm_loss = criterion(mlm_out.view(-1, V), mask_label.view(-1))
+            nsp_loss = criterion(nsp_out, cls_label)
             mlm_loss /= args.stack_num
             nsp_loss /= args.stack_num
             loss = mlm_loss + nsp_loss
@@ -215,19 +214,20 @@ for epoch in range(start_e, args.max_epoch):
                 scaler.update()
                 optimizer.zero_grad()
 
-                tb_writer.add_scalar('total_loss/step', total_loss, step_num)
-                tb_writer.add_scalar('mlm_loss/step', mlm_loss_sum, step_num)
-                tb_writer.add_scalar('nsp_loss/step', nsp_loss_sum, step_num)
-                tb_writer.add_scalar('mlm_acc/step', np.mean(mlm_acc_list), step_num)
-                tb_writer.add_scalar('nsp_acc/step', np.mean(nsp_acc_list), step_num)
-                tb_writer.add_scalar('lr/step', optimizer.param_groups[0]['lr'], step_num)
-                tb_writer.flush()
+                if step_num % (args.stack_num * args.eval_interval) == 0:
+                    tb_writer.add_scalar('total_loss/step', total_loss/args.eval_interval, step_num)
+                    tb_writer.add_scalar('mlm_loss/step', mlm_loss_sum/args.eval_interval, step_num)
+                    tb_writer.add_scalar('nsp_loss/step', nsp_loss_sum/args.eval_interval, step_num)
+                    tb_writer.add_scalar('mlm_acc/step', np.mean(mlm_acc_list), step_num)
+                    tb_writer.add_scalar('nsp_acc/step', np.mean(nsp_acc_list), step_num)
+                    tb_writer.add_scalar('lr/step', optimizer.param_groups[0]['lr'], step_num)
+                    tb_writer.flush()
 
-                total_loss = 0
-                mlm_loss_sum = 0
-                nsp_loss_sum = 0
-                mlm_acc_list = []
-                nsp_acc_list = []
+                    total_loss = 0
+                    mlm_loss_sum = 0
+                    nsp_loss_sum = 0
+                    mlm_acc_list = []
+                    nsp_acc_list = []
 
                 if step_num == args.max_steps:
                     break

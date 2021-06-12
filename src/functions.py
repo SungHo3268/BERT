@@ -69,7 +69,7 @@ def replace_mask(inputs, vocab_size=30000, cls_id=2, sep_id=3, mask_id=4):
              tensor([ids]) = (128, )
     """
     mask_loc = torch.zeros_like(inputs)
-    mask_label = torch.zeros_like(inputs, dtype=torch.long)
+    mask_label = torch.full_like(input=inputs, fill_value=-100, dtype=torch.long)
     for i, sequence in enumerate(inputs):       # sequence = tensor([id1, id2, ... ])
         for j, token in enumerate(sequence):
             if token == 0:
