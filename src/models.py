@@ -67,4 +67,3 @@ class BERT(nn.Module):
             nn.init.trunc_normal_(self.nsp_layer.weight, std=initializer_range)
             nn.init.constant_(self.mlm_layer2.bias, 0)
             nn.init.constant_(self.nsp_layer.bias, 0)
-

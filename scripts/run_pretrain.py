@@ -167,9 +167,13 @@ for epoch in range(start_e, args.max_epoch):
         for j in range(len(corpus)):
             temp = (corpus[j], c_label[j])
             dataset.append(temp)
-        print("Applying padding and Making batch...")
-        data_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,
+        print('Shuffling...', end=' ')
+        random.shuffle(dataset)
+        print('Complete.')
+        print("Applying padding and Making batch...", end=' ')
+        data_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, collate_fn=collate_fn,
                                  num_workers=4, drop_last=True)
+        print('Complete.')
         for inputs, cls_label, mask_loc, mask_label in tqdm(data_loader, desc='pre-training...',
                                                             total=len(data_loader), bar_format='{l_bar}{r_bar}'):
             if args.gpu:
@@ -181,16 +185,16 @@ for epoch in range(start_e, args.max_epoch):
             with amp.autocast():
                 # forward
                 mlm_out, nsp_out = model(inputs, sep_id)        # mlm_out = (batch_size, max_seq_len, V)
-                # mlm_out *= mask_loc.unsqueeze(-1)                               # nsp_out = (batch_size, 2)
-                # acc
-                # MLM
+                                                                # nsp_out = (batch_size, 2)
+                # acc - MLM
                 correct = torch.sum(torch.argmax(mlm_out, dim=-1) == mask_label)
-                mlm_acc = int(correct) / len(mask_label)
+                mlm_acc = int(correct) / int(torch.sum(mask_loc))
                 mlm_acc_list.append(mlm_acc)
-                # CLS
+                # acc - NSP
                 correct = torch.sum(torch.argmax(nsp_out, dim=-1) == cls_label)
                 nsp_acc = int(correct) / len(cls_label)
                 nsp_acc_list.append(nsp_acc)
+
             # loss
             mlm_loss = criterion(mlm_out.view(-1, V), mask_label.view(-1))
             nsp_loss = criterion(nsp_out, cls_label)
