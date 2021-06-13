@@ -28,6 +28,7 @@ parser.add_argument('--d_model', type=int, default=128)
 parser.add_argument('--dropout', type=float, default=0.1)
 parser.add_argument('--initializer_range', type=float, default=0.2)
 parser.add_argument('--eval_interval', type=int, default=10)
+parser.add_argument('--save_interval', type=int, default=100000)
 parser.add_argument('--initial_lr', type=float, default=1e-4)
 parser.add_argument('--pretraining', type=_bool, default=True)
 parser.add_argument('--max_steps', type=int, default=1000000)
@@ -233,6 +234,17 @@ for epoch in range(start_e, args.max_epoch):
                     mlm_acc_list = []
                     nsp_acc_list = []
 
+                if step_num % args.save_interval == 0:
+                    print(f"Saving the model at {step_num}steps...", end=' ')
+                    torch.save(model.state_dict(), os.path.join(log_dir, f'ckpt/model_{step_num/1000}k.ckpt'))
+                    print("optimizer...", end=' ')
+                    torch.save(optimizer.state_dict(), os.path.join(log_dir, f'ckpt/optimizer_{step_num/1000}k.ckpt'))
+                    print('scaler...', end=' ')
+                    torch.save(scaler.state_dict(), os.path.join(log_dir, f'ckpt/scaler_{step_num/1000}k.ckpt'))
+                    print('step_num...', end=' ')
+                    with open(os.path.join(log_dir, f'ckpt/step_num_{step_num/1000}k.pkl'), 'wb') as fw:
+                        pickle.dump(step_num, fw)
+                    print("Complete.\n")
                 if step_num == args.max_steps:
                     break
         if step_num == args.max_steps:
