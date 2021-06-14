@@ -67,3 +67,37 @@ class BERT(nn.Module):
             nn.init.trunc_normal_(self.nsp_layer.weight, std=initializer_range)
             nn.init.constant_(self.mlm_layer2.bias, 0)
             nn.init.constant_(self.nsp_layer.bias, 0)
+
+
+class Classifier(nn.Module):
+    def __init__(self, model, class_num, d_model):
+        super(Classifier, self).__init__()
+        self.model = model
+        self.nonlinear = nn.Linear(d_model, d_model, bias=False)
+        self.gelu = nn.GELU()
+        self.layer_norm = nn.LayerNorm(d_model)
+        self.linear = nn.Linear(d_model, class_num, bias=True)
+
+    def forward(self, inputs, sep_id):
+        hs = self.model(inputs, sep_id)     # hs = (batch_size, max_seq_len, d_model)
+        hs = self.nonlinear(hs)     # hs = (batch_size, max_seq_len, d_model)
+        hs = self.gelu(hs)
+        hs = self.layer_norm(hs)
+        out = self.linear(hs)       # out = (batch_size, max_seq_len, class_num)
+        return out
+
+    def predict(self, inputs, labels, sep_id):
+        hs = self.model(inputs, sep_id)     # hs = (batch_size, max_seq_len, d_model)
+        hs = self.nonlinear(hs)     # hs = (batch_size, max_seq_len, d_model)
+        hs = self.gelu(hs)
+        hs = self.layer_norm(hs)
+        out = self.linear(hs)       # out = (batch_size, max_seq_len, class_num)
+        cls = out[:, 0]             # cls = (batch_size, class_num)
+        correct = torch.sum(torch.argmax(cls, dim=-1) == labels)
+        acc = correct / len(labels)
+        return acc
+
+    def init_param(self, initializer_range):
+        nn.init.trunc_normal_(self.nonlinear.weight, std=initializer_range)
+        nn.init.trunc_normal_(self.linear.weight, std=initializer_range)
+        nn.init.constant_(self.linear.bias, 0)

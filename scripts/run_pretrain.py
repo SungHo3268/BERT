@@ -173,7 +173,7 @@ for epoch in range(start_e, args.max_epoch):
         print('Complete.')
         print("Applying padding and Making batch...", end=' ')
         data_loader = DataLoader(dataset=dataset, batch_size=args.batch_size, collate_fn=collate_fn,
-                                 num_workers=4, drop_last=True)
+                                 num_workers=4, shuffle=True, drop_last=True)
         print('Complete.')
         for inputs, cls_label, mask_loc, mask_label in tqdm(data_loader, desc='pre-training...',
                                                             total=len(data_loader), bar_format='{l_bar}{r_bar}'):
@@ -188,12 +188,12 @@ for epoch in range(start_e, args.max_epoch):
                 mlm_out, nsp_out = model(inputs, sep_id)        # mlm_out = (batch_size, max_seq_len, V)
                                                                 # nsp_out = (batch_size, 2)
                 # acc - MLM
-                correct = torch.sum(torch.argmax(mlm_out, dim=-1) == mask_label)
-                mlm_acc = int(correct) / int(torch.sum(mask_loc))
+                mlm_correct = torch.sum(torch.argmax(mlm_out, dim=-1) == mask_label)
+                mlm_acc = int(mlm_correct) / int(torch.sum(mask_loc))
                 mlm_acc_list.append(mlm_acc)
                 # acc - NSP
-                correct = torch.sum(torch.argmax(nsp_out, dim=-1) == cls_label)
-                nsp_acc = int(correct) / len(cls_label)
+                nsp_correct = torch.sum(torch.argmax(nsp_out, dim=-1) == cls_label)
+                nsp_acc = int(nsp_correct) / len(cls_label)
                 nsp_acc_list.append(nsp_acc)
 
             # loss
@@ -250,16 +250,16 @@ for epoch in range(start_e, args.max_epoch):
         if step_num == args.max_steps:
             break
 
-    print("Saving the model...", end=' ')
-    torch.save(model.state_dict(), os.path.join(log_dir, 'ckpt/model.ckpt'))
-    print("optimizer...", end=' ')
-    torch.save(optimizer.state_dict(), os.path.join(log_dir, 'ckpt/optimizer.ckpt'))
-    print('scaler...', end=' ')
-    torch.save(scaler.state_dict(), os.path.join(log_dir, 'ckpt/scaler.ckpt'))
-    print('step_num...', end=' ')
-    with open(os.path.join(log_dir, 'ckpt/step_num.pkl'), 'wb') as fw:
-        pickle.dump(step_num, fw)
-    print("Complete.\n")
+    # print("Saving the model...", end=' ')
+    # torch.save(model.state_dict(), os.path.join(log_dir, 'ckpt/model_1M.ckpt'))
+    # print("optimizer...", end=' ')
+    # torch.save(optimizer.state_dict(), os.path.join(log_dir, 'ckpt/optimizer_1M.ckpt'))
+    # print('scaler...', end=' ')
+    # torch.save(scaler.state_dict(), os.path.join(log_dir, 'ckpt/scaler_1M.ckpt'))
+    # print('step_num...', end=' ')
+    # with open(os.path.join(log_dir, 'ckpt/step_num_1M.pkl'), 'wb') as fw:
+    #     pickle.dump(step_num, fw)
+    # print("Complete.\n")
 
     if step_num == args.max_steps:
         break

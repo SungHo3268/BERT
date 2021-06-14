@@ -126,3 +126,47 @@ def get_mask_out(mlm_out, mask_loc):
         mask_hidden = mlm_out[loc]      # (3000, )
         mask_out.append(mask_hidden)
     return torch.stack(mask_out, dim=0)                     # (mask_num, 3000)
+
+
+def preprocess_ft_dataset(inputs, labels, tokenizer, cls_id, sep_id, task, max_seq_len):
+    # preprocessing
+    single_dataset = ['sst2', 'cola']
+    pair_dataset = ['mnli', 'mnli_matched', 'mnli_mismatched', 'qqp', 'qnli', 'stsb', 'mrpc', 'rte']
+    print("Preprocess dataset (Convert_to_id, CLS, SEP, Padding, Shuffling)...")
+    truncated = 0
+    new_input = []
+    if task in single_dataset:
+        for i, sentence in enumerate(inputs):
+            temp = [cls_id]
+            temp += tokenizer.EncodeAsIds(sentence)
+            if len(temp) <= max_seq_len:
+                temp += [0] * (max_seq_len - len(temp))
+            else:
+                temp = temp[:max_seq_len]
+                truncated += 1
+            new_input.append(temp)
+    elif task in pair_dataset:
+        sentences1 = inputs[0]
+        sentences2 = inputs[1]
+        for sentence1, sentence2 in zip(sentences1, sentences2):
+            temp = [cls_id]
+            temp += tokenizer.EncodeAsIds(sentence1)
+            temp += [sep_id]
+            temp += tokenizer.EncodeAsIds(sentence2)
+            if len(temp) <= max_seq_len:
+                temp += [0] * (max_seq_len - len(temp))
+            else:
+                temp = temp[:max_seq_len]
+                truncated += 1
+            new_input.append(temp)
+    if truncated > 0:
+        print(f"{truncated}/{len(new_input)} sentences are truncated by {max_seq_len}seq_len.")
+    else:
+        print("There is no truncated sentence...", end=' ')
+
+    # Shuffling
+    per = np.arange(len(new_input))
+    new_input = np.array(new_input)[per]
+    labels = np.array(labels)[per]
+    print('Complete.\n')
+    return new_input, labels
