@@ -1,4 +1,3 @@
-from datasets import load_dataset
 import argparse
 from distutils.util import strtobool as _bool
 import json
@@ -16,8 +15,8 @@ from src.models import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode', type=str, default='dummy')
 parser.add_argument('--port', type=str, default='56789')
-parser.add_argument('--task', type=str, default='rte',
-                    help="ax, cola, mnli, mnli_matched,mnli_mismatched, mrpc, qnli, qqp, rte, sst2, stsb, wnli")
+parser.add_argument('--task', type=str, default='mnli',
+                    help="ax, cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb, wnli")
 parser.add_argument('--max_epoch', type=int, default=4)
 parser.add_argument('--batch_size', type=int, default=16)
 parser.add_argument('--max_seq_len', type=int, default=128)
@@ -26,14 +25,13 @@ parser.add_argument('--att_head_num', type=int, default=2)
 parser.add_argument('--d_model', type=int, default=128)
 parser.add_argument('--dropout', type=float, default=0.1)
 parser.add_argument('--initializer_range', type=float, default=0.2)
-parser.add_argument('--eval_interval', type=int, default=100)
-parser.add_argument('--save_interval', type=int, default=100000)
-parser.add_argument('--initial_lr', type=float, default=2e-5)
+parser.add_argument('--trained_steps', type=str, default='1000.0k')
+parser.add_argument('--eval_interval', type=int, default=10)
+parser.add_argument('--initial_lr', type=float, default=1e-04)
 parser.add_argument('--pretraining', type=_bool, default=True)
-parser.add_argument('--max_steps', type=int, default=1000000)
 parser.add_argument('--random_seed', type=int, default=42)
 parser.add_argument('--gpu', type=_bool, default=True)
-parser.add_argument('--cuda', type=int, default=3)
+parser.add_argument('--cuda', type=int, default=1)
 parser.add_argument('--restart', type=_bool, default=False)
 parser.add_argument('--restart_epoch', type=int, default=0)
 args = parser.parse_args()
@@ -87,46 +85,44 @@ torch.manual_seed(args.random_seed)
 
 
 ############################## Load dataset ##############################
-dataset = load_dataset('glue', args.task)
-
-single_dataset = ['sst2', 'cola']
-pair_dataset = ['mnli', 'mnli_matched', 'mnli_mismatched', 'qqp', 'qnli', 'stsb', 'mrpc', 'rte']
-
-if args.task in single_dataset:
-    print('Loading the train dataset...')
-    train_inputs, train_labels = dataset['train']['sentence'], dataset['train']['label']
-    train_inputs, train_labels = preprocess_ft_dataset(train_inputs, train_labels, tokenizer,
-                                                       cls_id, sep_id, args.task, args.max_seq_len)
-    print('Loading the validation dataset...')
-    val_inputs, val_labels = dataset['validation']['sentence'], dataset['validation']['label']
-    val_inputs, val_labels = preprocess_ft_dataset(val_inputs, val_labels, tokenizer,
-                                                   cls_id, sep_id, args.task, args.max_seq_len)
-elif args.task in pair_dataset:
-    print('Loading the train dataset...')
-    train_input1, train_input2, train_labels = dataset['train']['sentence1'],\
-                                               dataset['train']['sentence2'],\
-                                               dataset['train']['label']
-    train_inputs = [train_input1, train_input2]
-    train_inputs, train_labels = preprocess_ft_dataset(train_inputs, train_labels, tokenizer,
-                                                       cls_id, sep_id, args.task, args.max_seq_len)
-    print('Loading the validation dataset...')
-    val_input1, val_input2, val_labels = dataset['validation']['sentence1'], \
-                                         dataset['validation']['sentence2'], \
-                                         dataset['validation']['label']
-    val_inputs = [val_input1, val_input2]
-    val_inputs, val_labels = preprocess_ft_dataset(val_inputs, val_labels, tokenizer,
-                                                   cls_id, sep_id, args.task, args.max_seq_len)
-
-class_num = len(set(train_labels))
-train_dataset = []
-for i in range(len(train_inputs)):
-    train_dataset.append([train_inputs[i], train_labels[i]])
-train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True, drop_last=True)
-
-val_dataset = []
-for i in range(len(val_inputs)):
-    val_dataset.append([val_inputs[i], val_labels[i]])
-validation_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True, drop_last=True)
+if args.task == 'mnli':
+    train_inputs, train_labels, val_matched_inputs, val_matched_labels, val_mismatched_inputs, val_mismatched_labels \
+        = load_ft_dataset(args.task, tokenizer, cls_id, sep_id, args.max_seq_len)
+    # make train dataset loader
+    class_num = len(set(train_labels))
+    train_dataset = []
+    for i in range(len(train_inputs)):
+        train_dataset.append([train_inputs[i], train_labels[i]])
+    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True,
+                              drop_last=True)
+    # make validation matched dataset loader
+    val_matched_dataset = []
+    for i in range(len(val_matched_inputs)):
+        val_matched_dataset.append([val_matched_inputs[i], val_matched_labels[i]])
+    validation_matched_loader = DataLoader(dataset=val_matched_dataset, batch_size=args.batch_size, num_workers=4,
+                                           shuffle=True, drop_last=True)
+    # make validation mismatched dataset loader
+    val_mismatched_dataset = []
+    for i in range(len(val_matched_inputs)):
+        val_mismatched_dataset.append([val_mismatched_inputs[i], val_mismatched_labels[i]])
+    validation_mismatched_loader = DataLoader(dataset=val_mismatched_dataset, batch_size=args.batch_size, num_workers=4,
+                                              shuffle=True, drop_last=True)
+else:
+    train_inputs, train_labels, val_inputs, val_labels \
+        = load_ft_dataset(args.task, tokenizer, cls_id, sep_id, args.max_seq_len)
+    # make train dataset loader
+    class_num = len(set(train_labels))
+    train_dataset = []
+    for i in range(len(train_inputs)):
+        train_dataset.append([train_inputs[i], train_labels[i]])
+    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True,
+                              drop_last=True)
+    # make validation dataset loader
+    val_dataset = []
+    for i in range(len(val_inputs)):
+        val_dataset.append([val_inputs[i], val_labels[i]])
+    validation_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True,
+                                   drop_last=True)
 
 
 ############################## Init Net ##############################
@@ -142,10 +138,10 @@ scaler = amp.GradScaler()
 # Load pre-trained model
 print("Loading the model...", end=' ')
 ckpt_dir = os.path.join(log_dir, 'ckpt')
-model.load_state_dict(torch.load(os.path.join(ckpt_dir, 'model.ckpt'),
+model.load_state_dict(torch.load(os.path.join(ckpt_dir, f'model_{args.trained_steps}.ckpt'),
                                  map_location=f'cuda:{args.cuda}' if args.gpu else 'cpu'))
 model.pretraining = False
-scaler.load_state_dict(torch.load(os.path.join(ckpt_dir, 'scaler.ckpt'),
+scaler.load_state_dict(torch.load(os.path.join(ckpt_dir, f'scaler_{args.trained_steps}.ckpt'),
                                   map_location=f'cuda:{args.cuda}' if args.gpu else 'cpu'))
 print("Complete.")
 
@@ -167,10 +163,10 @@ acc_list = []
 
 val_acc = 0
 count = 0
-best_acc = [0, 0.0]       # [epoch, acc]
+print(f"{args.task}_fine_tuning_{args.batch_size}B_{args.initial_lr}lr")
 for epoch in range(args.max_epoch):
     classifier.train()
-    for train_input, train_label in tqdm(train_loader, desc=f'Fine tuning {args.task}...',
+    for train_input, train_label in tqdm(train_loader, desc='Fine tuning...',
                                          total=len(train_loader), bar_format='{l_bar}{r_bar}'):
         if args.gpu:
             train_input = train_input.to(device)
@@ -199,27 +195,48 @@ for epoch in range(args.max_epoch):
             avg_acc = total_acc/stack
             loss_list.append(avg_loss)
             acc_list.append(avg_acc)
-            # print(f"loss: {avg_loss}    |    acc: {avg_acc*100} [%]")
             stack = 0
             total_loss = 0
             total_acc = 0
 
     classifier.eval()
-    for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
+    if args.task == 'mnli':
+        for val_input, val_label in tqdm(validation_matched_loader, desc=f'matched evaluation...',
+                                         total=len(validation_matched_loader), bar_format='{l_bar}{r_bar}'):
+            if args.gpu:
+                val_input = val_input.to(device)
+                val_label = val_label.to(device)
+            count += 1
+            with amp.autocast():
+                # evaluation
+                acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
+                val_acc += acc
+        validation_acc = val_acc / count * 100
+        print(f"{epoch+1}/{args.max_epoch}epoch valid_accuracy: {validation_acc}[%]\n")
+
+        for val_input, val_label in tqdm(validation_mismatched_loader, desc=f'mismatched evaluation...',
+                                         total=len(validation_mismatched_loader), bar_format='{l_bar}{r_bar}'):
+            if args.gpu:
+                val_input = val_input.to(device)
+                val_label = val_label.to(device)
+            count += 1
+            with amp.autocast():
+                # evaluation
+                acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
+                val_acc += acc
+        validation_acc = val_acc / count * 100
+        print(f"{epoch+1}/{args.max_epoch}epoch valid_accuracy: {validation_acc}[%]\n")
+
+    else:
+        for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
                                          total=len(validation_loader), bar_format='{l_bar}{r_bar}'):
-        if args.gpu:
-            val_input = val_input.to(device)
-            val_label = val_label.to(device)
-
-        count += 1
-        with amp.autocast():
-            # evaluation
-            acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
-            val_acc += acc
-
-    validation_acc = val_acc / count * 100
-    if best_acc[1] < validation_acc and epoch != 0:
-        best_acc[1] = validation_acc
-        best_acc[0] = epoch+1
-    print(f"{epoch+1}/{args.max_epoch}epoch valid_accuracy: {validation_acc}[%]")
-print(f"best_acc: {best_acc[1]}[%]   at {best_acc[0]}")
+            if args.gpu:
+                val_input = val_input.to(device)
+                val_label = val_label.to(device)
+            count += 1
+            with amp.autocast():
+                # evaluation
+                acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
+                val_acc += acc
+        validation_acc = val_acc / count * 100
+        print(f"{epoch + 1}/{args.max_epoch}epoch valid_accuracy: {validation_acc}[%]\n")

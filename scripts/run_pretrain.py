@@ -236,13 +236,13 @@ for epoch in range(start_e, args.max_epoch):
 
                 if step_num % args.save_interval == 0:
                     print(f"Saving the model at {step_num}steps...", end=' ')
-                    torch.save(model.state_dict(), os.path.join(log_dir, f'ckpt/model_{step_num/1000}k.ckpt'))
+                    torch.save(model.state_dict(), os.path.join(log_dir, f'ckpt/model_{int(step_num/1000)}k.ckpt'))
                     print("optimizer...", end=' ')
-                    torch.save(optimizer.state_dict(), os.path.join(log_dir, f'ckpt/optimizer_{step_num/1000}k.ckpt'))
+                    torch.save(optimizer.state_dict(), os.path.join(log_dir, f'ckpt/optimizer_{int(step_num/1000)}k.ckpt'))
                     print('scaler...', end=' ')
-                    torch.save(scaler.state_dict(), os.path.join(log_dir, f'ckpt/scaler_{step_num/1000}k.ckpt'))
+                    torch.save(scaler.state_dict(), os.path.join(log_dir, f'ckpt/scaler_{int(step_num/1000)}k.ckpt'))
                     print('step_num...', end=' ')
-                    with open(os.path.join(log_dir, f'ckpt/step_num_{step_num/1000}k.pkl'), 'wb') as fw:
+                    with open(os.path.join(log_dir, f'ckpt/step_num_{int(step_num/1000)}k.pkl'), 'wb') as fw:
                         pickle.dump(step_num, fw)
                     print("Complete.\n")
                 if step_num == args.max_steps:

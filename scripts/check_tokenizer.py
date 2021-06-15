@@ -31,8 +31,8 @@ for i, word in enumerate(vocab):
 
 model_file = 'tokenizer/pretrain_all_30k.model'
 sp = spm.SentencePieceProcessor(model_file=model_file)
-de = sp.encode(["I'm developing with pycharm locally on my windows 10 machine. And have a guest VM machine with ubuntu "
-                "which contain my remote deployment server. I'm using SFTP for syncing between the two environments. "],
-               out_type=int)
+de = sp.EncodeAsIds(
+    ["I'm developing with pycharm locally on my windows 10 machine. And have a guest VM machine with ubuntu "
+     "which contain my remote deployment server. I'm using SFTP for syncing between the two environments. "])
 print(de)
-print(sp.decode(de))
+print(sp.Decode(de))

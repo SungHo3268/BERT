@@ -1,4 +1,5 @@
 import torch
+from datasets import load_dataset
 import pickle
 import numpy as np
 import sys
@@ -128,6 +129,93 @@ def get_mask_out(mlm_out, mask_loc):
     return torch.stack(mask_out, dim=0)                     # (mask_num, 3000)
 
 
+def load_ft_dataset(task, tokenizer, cls_id, sep_id, max_seq_len):
+    dataset = load_dataset('glue', task)
+
+    single_dataset = ['sst2', 'cola']
+    pair_dataset = ['mnli', 'mnli_matched', 'mnli_mismatched', 'qqp', 'qnli', 'stsb', 'mrpc', 'rte']
+
+    if task in single_dataset:
+        print('Loading the train dataset...')
+        train_inputs, train_labels = dataset['train']['sentence'], dataset['train']['label']
+        train_inputs, train_labels = preprocess_ft_dataset(train_inputs, train_labels, tokenizer,
+                                                           cls_id, sep_id, task, max_seq_len)
+        print('Loading the validation dataset...')
+        val_inputs, val_labels = dataset['validation']['sentence'], dataset['validation']['label']
+        val_inputs, val_labels = preprocess_ft_dataset(val_inputs, val_labels, tokenizer,
+                                                       cls_id, sep_id, task, max_seq_len)
+        return train_inputs, train_labels, val_inputs, val_labels
+
+    elif task in pair_dataset:
+        print('Loading the train dataset...')
+        if task == 'qnli':
+            question, sentence, train_labels = dataset['train']['question'], \
+                                               dataset['train']['sentence'], \
+                                               dataset['train']['label']
+            train_inputs = [question, sentence]
+        elif task == 'qqp':
+            question1, question2, train_labels = dataset['train']['question1'], \
+                                                 dataset['train']['question2'], \
+                                                 dataset['train']['label']
+            train_inputs = [question1, question2]
+        elif task == 'mnli':
+            premise, hypothesis, train_labels = dataset['train']['premise'], \
+                                                dataset['train']['hypothesis'], \
+                                                dataset['train']['label']
+            train_inputs = [premise, hypothesis]
+        else:
+            train_input1, train_input2, train_labels = dataset['train']['sentence1'], \
+                                                       dataset['train']['sentence2'], \
+                                                       dataset['train']['label']
+            train_inputs = [train_input1, train_input2]
+        train_inputs, train_labels = preprocess_ft_dataset(train_inputs, train_labels, tokenizer,
+                                                           cls_id, sep_id, task, max_seq_len)
+
+        print('Loading the validation dataset...')
+        if task == 'qnli':
+            question, sentence, val_labels = dataset['validation']['question'], \
+                                             dataset['validation']['sentence'], \
+                                             dataset['validation']['label']
+            val_inputs = [question, sentence]
+            val_inputs, val_labels = preprocess_ft_dataset(val_inputs, val_labels, tokenizer,
+                                                           cls_id, sep_id, task, max_seq_len)
+            return train_inputs, train_labels, val_inputs, val_labels
+        elif task == 'qqp':
+            question1, question2, val_labels = dataset['validation']['question1'], \
+                                               dataset['validation']['question2'], \
+                                               dataset['validation']['label']
+            val_inputs = [question1, question2]
+            val_inputs, val_labels = preprocess_ft_dataset(val_inputs, val_labels, tokenizer,
+                                                           cls_id, sep_id, task, max_seq_len)
+            return train_inputs, train_labels, val_inputs, val_labels
+        elif task == 'mnli':
+            m_premise, m_hypothesis, m_val_labels = dataset['validation_matched']['premise'], \
+                                                    dataset['validation_matched']['hypothesis'], \
+                                                    dataset['validation_matched']['label']
+            val_matched_inputs = [m_premise, m_hypothesis]
+
+            mm_premise, mm_hypothesis, mm_val_labels = dataset['validation_mismatched']['premise'], \
+                                                       dataset['validation_mismatched']['hypothesis'], \
+                                                       dataset['validation_mismatched']['label']
+            val_mismatched_inputs = [mm_premise, mm_hypothesis]
+            val_matched_inputs, val_matched_labels = preprocess_ft_dataset(val_matched_inputs, m_val_labels, tokenizer,
+                                                                           cls_id, sep_id, task, max_seq_len)
+            val_mismatched_inputs, val_mismatched_labels = preprocess_ft_dataset(val_mismatched_inputs, mm_val_labels,
+                                                                                 tokenizer, cls_id, sep_id, task,
+                                                                                 max_seq_len)
+            return train_inputs, train_labels, val_matched_inputs, val_matched_labels, \
+                   val_mismatched_inputs, val_mismatched_labels
+
+        else:
+            val_input1, val_input2, val_labels = dataset['validation']['sentence1'], \
+                                                 dataset['validation']['sentence2'], \
+                                                 dataset['validation']['label']
+            val_inputs = [val_input1, val_input2]
+            val_inputs, val_labels = preprocess_ft_dataset(val_inputs, val_labels, tokenizer,
+                                                           cls_id, sep_id, task, max_seq_len)
+            return train_inputs, train_labels, val_inputs, val_labels
+
+
 def preprocess_ft_dataset(inputs, labels, tokenizer, cls_id, sep_id, task, max_seq_len):
     # preprocessing
     single_dataset = ['sst2', 'cola']
@@ -170,3 +258,4 @@ def preprocess_ft_dataset(inputs, labels, tokenizer, cls_id, sep_id, task, max_s
     labels = np.array(labels)[per]
     print('Complete.\n')
     return new_input, labels
+
