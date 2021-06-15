@@ -4,6 +4,8 @@ import json
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torch.cuda.amp as amp
+from sklearn.metrics import f1_score
+from scipy import stats
 import sys
 import os
 sys.path.append(os.getcwd())
@@ -15,10 +17,10 @@ from src.models import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode', type=str, default='dummy')
 parser.add_argument('--port', type=str, default='56789')
-parser.add_argument('--task', type=str, default='mnli',
+parser.add_argument('--task', type=str, default='rte',
                     help="ax, cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb, wnli")
 parser.add_argument('--max_epoch', type=int, default=4)
-parser.add_argument('--batch_size', type=int, default=16)
+parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--max_seq_len', type=int, default=128)
 parser.add_argument('--hidden_layer_num', type=int, default=2)
 parser.add_argument('--att_head_num', type=int, default=2)
@@ -110,6 +112,10 @@ if args.task == 'mnli':
 else:
     train_inputs, train_labels, val_inputs, val_labels \
         = load_ft_dataset(args.task, tokenizer, cls_id, sep_id, args.max_seq_len)
+    if args.task == 'stsb':
+        train_labels = train_labels.ceil().astype(int)
+        val_labels = val_labels.ceil().astype(int)
+
     # make train dataset loader
     class_num = len(set(train_labels))
     train_dataset = []
@@ -123,7 +129,6 @@ else:
         val_dataset.append([val_inputs[i], val_labels[i]])
     validation_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True,
                                    drop_last=True)
-
 
 ############################## Init Net ##############################
 embed_weight = nn.parameter.Parameter(torch.empty(V, args.d_model), requires_grad=True)
@@ -162,6 +167,7 @@ loss_list = []
 acc_list = []
 
 val_acc = 0
+val_f1 = 0
 count = 0
 print(f"{args.task}_fine_tuning_{args.batch_size}B_{args.initial_lr}lr")
 for epoch in range(args.max_epoch):
@@ -200,7 +206,7 @@ for epoch in range(args.max_epoch):
             total_acc = 0
 
     classifier.eval()
-    if args.task == 'mnli':
+    if args.task == 'mnli':         # two accuracy
         for val_input, val_label in tqdm(validation_matched_loader, desc=f'matched evaluation...',
                                          total=len(validation_matched_loader), bar_format='{l_bar}{r_bar}'):
             if args.gpu:
@@ -225,9 +231,11 @@ for epoch in range(args.max_epoch):
                 acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
                 val_acc += acc
         validation_acc = val_acc / count * 100
-        print(f"{epoch+1}/{args.max_epoch}epoch valid_accuracy: {validation_acc}[%]\n")
+        print(f"{epoch+1}/{args.max_epoch}epoch, validation acc: {float(validation_acc).__round__(1)} [%]\n")
 
-    else:
+    elif args.task == 'qqp' or args.task == 'mrpc':         # F1 score and Accuracy
+        total_out = []
+        total_label = []
         for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
                                          total=len(validation_loader), bar_format='{l_bar}{r_bar}'):
             if args.gpu:
@@ -236,7 +244,61 @@ for epoch in range(args.max_epoch):
             count += 1
             with amp.autocast():
                 # evaluation
-                acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
-                val_acc += acc
-        validation_acc = val_acc / count * 100
-        print(f"{epoch + 1}/{args.max_epoch}epoch valid_accuracy: {validation_acc}[%]\n")
+                out = classifier(val_input, sep_id)  # out = (batch_size, max_seq_len, class_num)
+            cls = out[:, 0]  # cls = (batch_size, class_num)
+            max_cls = torch.argmax(cls, dim=-1)     # cls = (batch_size, )
+
+            total_out.append(max_cls)
+            total_label.append(val_label)
+        # get f1 score
+        total_out = torch.cat(total_out)
+        total_label = torch.cat(total_label)
+        validation_f1 = f1_score(total_out.to('cpu'), total_label.to('cpu')) * 100
+        # get accuracy
+        correct = torch.sum(total_out == total_label)
+        validation_acc = correct/len(total_out) * 100
+        print(f"{epoch+1}/{args.max_epoch}epoch, validation f1/ acc: "
+              f"{validation_f1.__round__(1)}/ {float(validation_acc).__round__(1)} [%]\n")
+
+    elif args.task == 'cola':       # Metthew's Corr
+        continue
+
+    elif args.task == 'stsb':       # Pearson-Spearman Corr
+        for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
+                                         total=len(validation_loader), bar_format='{l_bar}{r_bar}'):
+            if args.gpu:
+                val_input = val_input.to(device)
+                val_label = val_label.to(device)
+            count += 1
+            with amp.autocast():
+                # evaluation
+                out = classifier(val_input, sep_id)  # out = (batch_size, max_seq_len, class_num)
+
+            cls = out[:, 0]  # cls = (batch_size, class_num)
+            max_cls = torch.argmax(cls, dim=-1)     # cls = (batch_size, )
+            val_f1 += stats.spearmanr(max_cls.to('cpu'), val_label.to('cpu'))
+        val_pearson_corr = val_f1 / count * 100
+        print(f"{epoch + 1}/{args.max_epoch}epoch, validation pearson_corr: {val_pearson_corr.__round__(1)} [%]\n")
+
+    else:
+        total_out = []
+        total_label = []
+        for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
+                                         total=len(validation_loader), bar_format='{l_bar}{r_bar}'):
+            if args.gpu:
+                val_input = val_input.to(device)
+                val_label = val_label.to(device)
+            count += 1
+            with amp.autocast():
+                # evaluation
+                out = classifier(val_input, sep_id)  # out = (batch_size, max_seq_len, class_num)
+            cls = out[:, 0]  # cls = (batch_size, class_num)
+            max_cls = torch.argmax(cls, dim=-1)  # cls = (batch_size, )
+            total_out.append(max_cls)
+            total_label.append(val_label)
+        # get accuracy
+        total_out = torch.cat(total_out)
+        total_label = torch.cat(total_label)
+        correct = torch.sum(total_out == total_label)
+        validation_acc = correct/len(total_out) * 100
+        print(f"{epoch + 1}/{args.max_epoch}epoch, validation acc: {float(validation_acc).__round__(1)} [%]\n")
