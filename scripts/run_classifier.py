@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import torch.cuda.amp as amp
 from sklearn.metrics import f1_score
+from sklearn.metrics import matthews_corrcoef
 from scipy import stats
 import sys
 import os
@@ -17,8 +18,8 @@ from src.models import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode', type=str, default='dummy')
 parser.add_argument('--port', type=str, default='56789')
-parser.add_argument('--task', type=str, default='rte',
-                    help="ax, cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb, wnli")
+parser.add_argument('--task', type=str, default='cola',
+                    help="cola, mnli, mrpc, qnli, qqp, rte, sst2, stsb")
 parser.add_argument('--max_epoch', type=int, default=4)
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--max_seq_len', type=int, default=128)
@@ -112,12 +113,10 @@ if args.task == 'mnli':
 else:
     train_inputs, train_labels, val_inputs, val_labels \
         = load_ft_dataset(args.task, tokenizer, cls_id, sep_id, args.max_seq_len)
-    if args.task == 'stsb':
-        train_labels = train_labels.ceil().astype(int)
-        val_labels = val_labels.ceil().astype(int)
-
     # make train dataset loader
     class_num = len(set(train_labels))
+    if args.task == 'stsb':
+        class_num = 1
     train_dataset = []
     for i in range(len(train_inputs)):
         train_dataset.append([train_inputs[i], train_labels[i]])
@@ -130,25 +129,25 @@ else:
     validation_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, num_workers=4, shuffle=True,
                                    drop_last=True)
 
+
 ############################## Init Net ##############################
 embed_weight = nn.parameter.Parameter(torch.empty(V, args.d_model), requires_grad=True)
 model = BERT(V, args.d_model, embed_weight, args.max_seq_len, args.dropout, args.hidden_layer_num, d_ff,
              args.att_head_num, args.pretraining, args.gpu, args.cuda)
 criterion = nn.CrossEntropyLoss()
+stsb_criterion = nn.MSELoss()
 optimizer = optim.AdamW(params=model.parameters(), lr=args.initial_lr,
                         betas=(beta1, beta2), weight_decay=l2_weight_decay)
 scaler = amp.GradScaler()
 
 
 # Load pre-trained model
-print("Loading the model...", end=' ')
 ckpt_dir = os.path.join(log_dir, 'ckpt')
 model.load_state_dict(torch.load(os.path.join(ckpt_dir, f'model_{args.trained_steps}.ckpt'),
                                  map_location=f'cuda:{args.cuda}' if args.gpu else 'cpu'))
 model.pretraining = False
 scaler.load_state_dict(torch.load(os.path.join(ckpt_dir, f'scaler_{args.trained_steps}.ckpt'),
                                   map_location=f'cuda:{args.cuda}' if args.gpu else 'cpu'))
-print("Complete.")
 
 classifier = Classifier(model, class_num, args.d_model)
 classifier.init_param(args.initializer_range)
@@ -160,15 +159,6 @@ if args.gpu:
 
 
 ############################## Start FineTuning ##############################
-stack = 0
-total_loss = 0
-total_acc = 0
-loss_list = []
-acc_list = []
-
-val_acc = 0
-val_f1 = 0
-count = 0
 print(f"{args.task}_fine_tuning_{args.batch_size}B_{args.initial_lr}lr")
 for epoch in range(args.max_epoch):
     classifier.train()
@@ -177,38 +167,35 @@ for epoch in range(args.max_epoch):
         if args.gpu:
             train_input = train_input.to(device)
             train_label = train_label.to(device)
+            if args.task == 'stsb':
+                train_label = train_label.to(torch.float32)
 
         optimizer.zero_grad()
         with amp.autocast():
             # forward
             out = classifier(train_input, sep_id)        # out = (batch_size, max_seq_len, class_num)
             cls_out = out[:, 0]  # cls = (batch_size, class_num)
-            loss = criterion(cls_out, train_label)
-            total_loss += loss
-
-        # acc
-        correct = torch.sum(torch.argmax(cls_out, dim=-1) == train_label)
-        acc = correct / len(train_label)
-        total_acc += acc
-
+            if args.task == 'stsb':
+                cls_out = torch.sigmoid(cls_out.squeeze()) * 5
+                loss = stsb_criterion(cls_out, train_label)
+            elif args.task == 'qnli':
+                loss = criterion(cls_out, train_label.to(torch.long))
+            else:
+                loss = criterion(cls_out, train_label)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
 
-        stack += 1
-        if stack == args.eval_interval:         # update
-            avg_loss = total_loss/stack
-            avg_acc = total_acc/stack
-            loss_list.append(avg_loss)
-            acc_list.append(avg_acc)
-            stack = 0
-            total_loss = 0
-            total_acc = 0
-
     classifier.eval()
+    val_acc = 0
+    val_f1 = 0
+    pearson_corr = 0
+    spearman_corr = 0
+    count = 0
     if args.task == 'mnli':         # two accuracy
-        for val_input, val_label in tqdm(validation_matched_loader, desc=f'matched evaluation...',
-                                         total=len(validation_matched_loader), bar_format='{l_bar}{r_bar}'):
+        matched_acc = 0
+        mismatched_acc = 0
+        for val_input, val_label in validation_matched_loader:
             if args.gpu:
                 val_input = val_input.to(device)
                 val_label = val_label.to(device)
@@ -217,11 +204,9 @@ for epoch in range(args.max_epoch):
                 # evaluation
                 acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
                 val_acc += acc
-        validation_acc = val_acc / count * 100
-        print(f"{epoch+1}/{args.max_epoch}epoch valid_accuracy: {validation_acc}[%]\n")
+        matched_acc = val_acc / count * 100
 
-        for val_input, val_label in tqdm(validation_mismatched_loader, desc=f'mismatched evaluation...',
-                                         total=len(validation_mismatched_loader), bar_format='{l_bar}{r_bar}'):
+        for val_input, val_label in validation_mismatched_loader:
             if args.gpu:
                 val_input = val_input.to(device)
                 val_label = val_label.to(device)
@@ -230,14 +215,14 @@ for epoch in range(args.max_epoch):
                 # evaluation
                 acc = classifier.predict(val_input, val_label, sep_id)  # out = (batch_size, max_seq_len, class_num)
                 val_acc += acc
-        validation_acc = val_acc / count * 100
-        print(f"{epoch+1}/{args.max_epoch}epoch, validation acc: {float(validation_acc).__round__(1)} [%]\n")
+        mismatched_acc = val_acc / count * 100
+        print(f"{epoch+1}/{args.max_epoch}epoch, validation acc (matched/ mismatched): "
+              f"{float(matched_acc).__round__(1)}/ {float(mismatched_acc).__round__(1)} [%]\n")
 
     elif args.task == 'qqp' or args.task == 'mrpc':         # F1 score and Accuracy
         total_out = []
         total_label = []
-        for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
-                                         total=len(validation_loader), bar_format='{l_bar}{r_bar}'):
+        for val_input, val_label in validation_loader:
             if args.gpu:
                 val_input = val_input.to(device)
                 val_label = val_label.to(device)
@@ -261,11 +246,29 @@ for epoch in range(args.max_epoch):
               f"{validation_f1.__round__(1)}/ {float(validation_acc).__round__(1)} [%]\n")
 
     elif args.task == 'cola':       # Metthew's Corr
-        continue
+        total_out = []
+        total_label = []
+        for val_input, val_label in validation_loader:
+            if args.gpu:
+                val_input = val_input.to(device)
+                val_label = val_label.to(device)
+            count += 1
+            with amp.autocast():
+                # evaluation
+                out = classifier(val_input, sep_id)  # out = (batch_size, max_seq_len, class_num)
+            cls = out[:, 0]  # cls = (batch_size, class_num)
+            max_cls = torch.argmax(cls, dim=-1)  # cls = (batch_size, )
+
+            total_out.append(max_cls)
+            total_label.append(val_label)
+        # get f1 score
+        total_out = torch.cat(total_out)
+        total_label = torch.cat(total_label)
+        validation_matthew = matthews_corrcoef(total_out.to('cpu'), total_label.to('cpu')) * 100
+        print(f"{epoch + 1}/{args.max_epoch}epoch, validation Matthews_corr: {validation_matthew.__round__(1)} [%]\n")
 
     elif args.task == 'stsb':       # Pearson-Spearman Corr
-        for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
-                                         total=len(validation_loader), bar_format='{l_bar}{r_bar}'):
+        for val_input, val_label in validation_loader:
             if args.gpu:
                 val_input = val_input.to(device)
                 val_label = val_label.to(device)
@@ -274,17 +277,18 @@ for epoch in range(args.max_epoch):
                 # evaluation
                 out = classifier(val_input, sep_id)  # out = (batch_size, max_seq_len, class_num)
 
-            cls = out[:, 0]  # cls = (batch_size, class_num)
-            max_cls = torch.argmax(cls, dim=-1)     # cls = (batch_size, )
-            val_f1 += stats.spearmanr(max_cls.to('cpu'), val_label.to('cpu'))
-        val_pearson_corr = val_f1 / count * 100
-        print(f"{epoch + 1}/{args.max_epoch}epoch, validation pearson_corr: {val_pearson_corr.__round__(1)} [%]\n")
+            cls = out[:, 0].squeeze()  # cls = (batch_size, class_num)
+            pearson_corr += np.corrcoef(cls.to('cpu').detach().numpy(), val_label.to('cpu'))[0][1]
+            spearman_corr += stats.spearmanr(cls.to('cpu').detach().numpy(), val_label.to('cpu'))[0]
+        val_pearson_corr = pearson_corr / count * 100
+        val_spearman_corr = spearman_corr / count * 100
+        print(f"{epoch + 1}/{args.max_epoch}epoch, validation pearson_corr/ spearman_corr: "
+              f"{val_pearson_corr.__round__(1)}/ {val_spearman_corr.__round__(1)} [%]\n")
 
     else:
         total_out = []
         total_label = []
-        for val_input, val_label in tqdm(validation_loader, desc=f'Evaluation...',
-                                         total=len(validation_loader), bar_format='{l_bar}{r_bar}'):
+        for val_input, val_label in validation_loader:
             if args.gpu:
                 val_input = val_input.to(device)
                 val_label = val_label.to(device)

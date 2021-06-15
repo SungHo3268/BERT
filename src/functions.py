@@ -1,6 +1,7 @@
 import torch
 from datasets import load_dataset
 import pickle
+import csv
 import numpy as np
 import sys
 import os
@@ -130,6 +131,10 @@ def get_mask_out(mlm_out, mask_loc):
 
 
 def load_ft_dataset(task, tokenizer, cls_id, sep_id, max_seq_len):
+    # if task == 'qnli':
+    #     dataset = load_qnli()
+    # else:
+    #     dataset = load_dataset('glue', task)
     dataset = load_dataset('glue', task)
 
     single_dataset = ['sst2', 'cola']
@@ -259,3 +264,46 @@ def preprocess_ft_dataset(inputs, labels, tokenizer, cls_id, sep_id, task, max_s
     print('Complete.\n')
     return new_input, labels
 
+
+def load_qnli():
+    question = []
+    sentence = []
+    label = []
+    with open("datasets/QNLI/train.tsv") as f:
+        r = csv.reader(f, delimiter="\t", quotechar='"')
+        for i, row in enumerate(r):
+            if i == 0:
+                continue
+            else:
+                if row[3] == 'not_entailment':
+                    l = 0
+                elif row[3] == 'entailment':
+                    l = 1
+                else:
+                    continue
+                question.append(row[1])
+                sentence.append(row[2])
+                label.append(l)
+    train = {'question': question, 'sentence': sentence, 'label': label}
+
+    question = []
+    sentence = []
+    label = []
+    with open("datasets/QNLI/dev.tsv") as f:
+        r = csv.reader(f, delimiter="\t", quotechar='"')
+        for i, row in enumerate(r):
+            if i == 0:
+                continue
+            else:
+                if row[3] == 'not_entailment':
+                    l = 0
+                elif row[3] == 'entailment':
+                    l = 1
+                else:
+                    continue
+                question.append(row[1])
+                sentence.append(row[2])
+                label.append(l)
+    validation = {'question': question, 'sentence': sentence, 'label': label}
+    dataset = {'train': train, 'validation': validation}
+    return dataset
